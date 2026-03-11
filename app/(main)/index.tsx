@@ -20,6 +20,8 @@ import { useBrandColors } from "@/hooks/use-brand-colors";
 import { Config } from "@/lib/config";
 import { supabase } from "@/lib/supabase";
 import { signOut } from "@/lib/auth";
+import { consumePendingMoment, onMomentDeepLink } from "@/lib/deep-link";
+import { registerForPushNotifications, savePushToken } from "@/lib/notifications";
 
 const AUTH_INTERCEPT_PATHS = ["/auth/sign-in", "/auth/sign-up"];
 
@@ -33,10 +35,26 @@ export default function WebViewScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const webViewReady = useRef(false);
+
+  const navigateToMoment = useCallback((momentId: string) => {
+    const url = `${Config.webAppUrl}/profile?view=editMoments&momentId=${encodeURIComponent(momentId)}`;
+    webViewRef.current?.injectJavaScript(
+      `window.location.href = ${JSON.stringify(url)}; true;`,
+    );
+  }, []);
 
   useEffect(() => {
     buildSessionUrl();
   }, []);
+
+  useEffect(() => {
+    return onMomentDeepLink((momentId) => {
+      if (webViewReady.current) {
+        navigateToMoment(momentId);
+      }
+    });
+  }, [navigateToMoment]);
 
   async function buildSessionUrl() {
     const { data } = await supabase.auth.getSession();
@@ -109,6 +127,8 @@ export default function WebViewScreen() {
         const message = JSON.parse(event.nativeEvent.data);
         if (message.type === "sign-out") {
           handleNativeSignOut();
+        } else if (message.type === "request-push-permission") {
+          handlePushPermissionRequest();
         }
       } catch {
         // not JSON, ignore
@@ -116,6 +136,31 @@ export default function WebViewScreen() {
     },
     [],
   );
+
+  const handlePushPermissionRequest = useCallback(async () => {
+    try {
+      const token = await registerForPushNotifications();
+      if (token) {
+        const { data } = await supabase.auth.getSession();
+        const userId = data.session?.user?.id;
+        if (userId) {
+          await savePushToken(userId, token);
+        }
+        webViewRef.current?.injectJavaScript(
+          `window.dispatchEvent(new CustomEvent('native-push-result', { detail: { success: true } })); true;`,
+        );
+      } else {
+        webViewRef.current?.injectJavaScript(
+          `window.dispatchEvent(new CustomEvent('native-push-result', { detail: { success: false, reason: 'denied' } })); true;`,
+        );
+      }
+    } catch (err) {
+      console.error("[WebView] Push permission request error:", err);
+      webViewRef.current?.injectJavaScript(
+        `window.dispatchEvent(new CustomEvent('native-push-result', { detail: { success: false, reason: 'error' } })); true;`,
+      );
+    }
+  }, []);
 
   if (error) {
     return (
@@ -164,7 +209,14 @@ export default function WebViewScreen() {
       onHttpError={handleHttpError}
       onMessage={handleMessage}
       onLoadStart={() => setIsLoading(true)}
-      onLoadEnd={() => setIsLoading(false)}
+      onLoadEnd={() => {
+        setIsLoading(false);
+        if (!webViewReady.current) {
+          webViewReady.current = true;
+          const pending = consumePendingMoment();
+          if (pending) navigateToMoment(pending);
+        }
+      }}
       javaScriptEnabled
       domStorageEnabled
       startInLoadingState
@@ -230,7 +282,6 @@ export default function WebViewScreen() {
           styles.root,
           {
             paddingTop: insets.top,
-            paddingBottom: insets.bottom,
             backgroundColor: c.background,
           },
         ]}
@@ -253,7 +304,6 @@ export default function WebViewScreen() {
         styles.root,
         {
           paddingTop: insets.top,
-          paddingBottom: insets.bottom,
           backgroundColor: c.background,
         },
       ]}

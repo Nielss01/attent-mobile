@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "attent",
+    "name": "Attent",
     "slug": "attent",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -13,8 +13,11 @@
       "supportsTablet": true,
       "infoPlist": {
         "UIBackgroundModes": [
+          "remote-notification",
           "remote-notification"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSFaceIDUsageDescription": "Attent uses Face ID to securely unlock the app."
       }
     },
     "android": {
@@ -48,6 +51,12 @@
         }
       ],
       "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Attent uses Face ID to securely unlock the app."
+        }
+      ],
       [
         "expo-notifications",
         {

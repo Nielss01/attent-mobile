@@ -2,6 +2,12 @@ import type { Session, User } from "@supabase/supabase-js";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import { supabase } from "./supabase";
+import {
+  clearStashedSession,
+  disableBiometricLogin,
+  isBiometricLoginEnabled,
+  stashSessionForBiometric,
+} from "./biometrics";
 
 export async function signInWithEmail(email: string, password: string) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -81,6 +87,26 @@ export async function resetPassword(email: string) {
 }
 
 export async function signOut() {
+  const bioEnabled = await isBiometricLoginEnabled();
+  if (bioEnabled) {
+    // Grab the latest refresh token before clearing local state.
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.refresh_token) {
+      await stashSessionForBiometric(data.session.refresh_token);
+    }
+    // Use 'local' scope so the refresh token stays valid server-side,
+    // allowing biometric re-entry with the stashed token.
+    const { error } = await supabase.auth.signOut({ scope: "local" });
+    if (error) throw error;
+  } else {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+  }
+}
+
+export async function signOutCompletely() {
+  await disableBiometricLogin();
+  await clearStashedSession();
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
 }

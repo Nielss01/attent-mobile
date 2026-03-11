@@ -8,6 +8,7 @@ import { AuthDivider } from "@/components/auth/AuthDivider";
 import { GoogleIcon } from "@/components/auth/GoogleIcon";
 import { useBrandColors } from "@/hooks/use-brand-colors";
 import { signUpWithEmail, signInWithGoogle } from "@/lib/auth";
+import { offerBiometricEnrollment } from "@/lib/biometrics";
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -24,7 +25,8 @@ export default function SignUpScreen() {
     setError(null);
     setGoogleLoading(true);
     try {
-      await signInWithGoogle();
+      const sessionData = await signInWithGoogle();
+      await offerBiometricEnrollment(sessionData.session?.refresh_token);
       router.replace("/(main)" as Href);
     } catch (err: any) {
       if (err.message !== "Google sign-in was cancelled") {
@@ -51,7 +53,8 @@ export default function SignUpScreen() {
     setError(null);
     setLoading(true);
     try {
-      await signUpWithEmail(name, email, password);
+      const data = await signUpWithEmail(name, email, password);
+      await offerBiometricEnrollment(data.session?.refresh_token);
       router.replace("/(main)" as Href);
     } catch (err: any) {
       setError(err.message ?? "Sign up failed.");

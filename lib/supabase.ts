@@ -1,12 +1,27 @@
+import { Platform } from "react-native";
 import { createClient } from "@supabase/supabase-js";
-import * as SecureStore from "expo-secure-store";
 import { Config } from "./config";
 
-const secureStoreAdapter = {
-  getItem: (key: string) => SecureStore.getItemAsync(key),
-  setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value),
-  removeItem: (key: string) => SecureStore.deleteItemAsync(key),
-};
+// expo-secure-store is native-only; during eas update's static render
+// (Node.js) the native module isn't available, so we lazy-import and
+// fall back to a no-op adapter to keep the export from crashing.
+const secureStoreAdapter =
+  Platform.OS === "web"
+    ? undefined
+    : {
+        getItem: async (key: string) => {
+          const SecureStore = await import("expo-secure-store");
+          return SecureStore.getItemAsync(key);
+        },
+        setItem: async (key: string, value: string) => {
+          const SecureStore = await import("expo-secure-store");
+          await SecureStore.setItemAsync(key, value);
+        },
+        removeItem: async (key: string) => {
+          const SecureStore = await import("expo-secure-store");
+          await SecureStore.deleteItemAsync(key);
+        },
+      };
 
 export const supabase = createClient(Config.supabaseUrl, Config.supabaseAnonKey, {
   auth: {
