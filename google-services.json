@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "951158552252",
+    "project_id": "attent-f1435",
+    "storage_bucket": "attent-f1435.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:951158552252:android:cfe90206a77a31980842b9",
+        "android_client_info": {
+          "package_name": "com.attent.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC5-PfNhhSIfGEOlFhgCxPSQDy8bmoGSYw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

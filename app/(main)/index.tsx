@@ -177,6 +177,10 @@ export default function WebViewScreen() {
       )}
       injectedJavaScript={`
         window.isNativeApp = true;
+        window.nativeSafeAreaBottom = ${insets.bottom};
+        document.documentElement.style.setProperty(
+          '--native-safe-area-bottom', '${insets.bottom}px'
+        );
 
         // Monitor URL changes (catches SPA navigations that
         // onNavigationStateChange may miss)
@@ -224,7 +228,11 @@ export default function WebViewScreen() {
       <View
         style={[
           styles.root,
-          { paddingTop: insets.top, backgroundColor: c.background },
+          {
+            paddingTop: insets.top,
+            paddingBottom: insets.bottom,
+            backgroundColor: c.background,
+          },
         ]}
       >
         <ScrollView
@@ -243,7 +251,11 @@ export default function WebViewScreen() {
     <View
       style={[
         styles.root,
-        { paddingTop: insets.top, backgroundColor: c.background },
+        {
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+          backgroundColor: c.background,
+        },
       ]}
     >
       {webView}

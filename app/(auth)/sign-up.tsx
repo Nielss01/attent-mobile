@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Link, useRouter, type Href } from "expo-router";
 import { AuthContainer } from "@/components/auth/AuthContainer";
 import { AuthInput } from "@/components/auth/AuthInput";
@@ -7,7 +7,7 @@ import { AuthButton } from "@/components/auth/AuthButton";
 import { AuthDivider } from "@/components/auth/AuthDivider";
 import { GoogleIcon } from "@/components/auth/GoogleIcon";
 import { useBrandColors } from "@/hooks/use-brand-colors";
-import { signUpWithEmail } from "@/lib/auth";
+import { signUpWithEmail, signInWithGoogle } from "@/lib/auth";
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -17,7 +17,23 @@ export default function SignUpScreen() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleGoogleSignUp = async () => {
+    setError(null);
+    setGoogleLoading(true);
+    try {
+      await signInWithGoogle();
+      router.replace("/(main)" as Href);
+    } catch (err: any) {
+      if (err.message !== "Google sign-in was cancelled") {
+        setError(err.message ?? "Google sign-in failed.");
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   const handleSignUp = async () => {
     if (!name || !email || !password || !confirmPassword) {
@@ -90,12 +106,8 @@ export default function SignUpScreen() {
       <AuthButton
         title="Continue with Google"
         variant="outline"
-        onPress={() =>
-          Alert.alert(
-            "Google Sign Up",
-            "Google OAuth requires a custom URL scheme and web browser redirect. Configure this in your Supabase dashboard.",
-          )
-        }
+        onPress={handleGoogleSignUp}
+        loading={googleLoading}
         icon={<GoogleIcon size={16} />}
       />
 

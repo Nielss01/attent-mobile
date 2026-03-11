@@ -3,6 +3,7 @@ import { ActivityIndicator, View } from "react-native";
 import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
 import { Stack, useRouter, useSegments, type Href } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
 import type { Session } from "@supabase/supabase-js";
 import "react-native-reanimated";
 
@@ -10,6 +11,8 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useBrandColors } from "@/hooks/use-brand-colors";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
 import { supabase } from "@/lib/supabase";
+
+SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -21,25 +24,26 @@ export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) {
-        // Validate the session is still valid with the server
-        supabase.auth.getUser().then(({ error }) => {
-          if (error) {
-            // Session is stale/expired — clear it
-            supabase.auth.signOut().finally(() => {
-              setSession(null);
-              setIsReady(true);
-            });
-          } else {
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (data.session) {
+          return supabase.auth.getUser().then(({ error }) => {
+            if (error) {
+              return supabase.auth.signOut().finally(() => {
+                setSession(null);
+                setIsReady(true);
+              });
+            }
             setSession(data.session);
             setIsReady(true);
-          }
-        });
-      } else {
+          });
+        }
         setIsReady(true);
-      }
-    });
+      })
+      .catch(() => {
+        setIsReady(true);
+      });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
@@ -49,6 +53,11 @@ export default function RootLayout() {
   }, []);
 
   usePushNotifications(session?.user?.id);
+
+  useEffect(() => {
+    if (!isReady) return;
+    SplashScreen.hideAsync();
+  }, [isReady]);
 
   useEffect(() => {
     if (!isReady) return;

@@ -1,4 +1,6 @@
 import type { Session, User } from "@supabase/supabase-js";
+import * as WebBrowser from "expo-web-browser";
+import * as Linking from "expo-linking";
 import { supabase } from "./supabase";
 
 export async function signInWithEmail(email: string, password: string) {
@@ -17,6 +19,60 @@ export async function signUpWithEmail(name: string, email: string, password: str
   if (error) throw error;
   if (data.user) await ensureUserAndProfile(data.user);
   return data;
+}
+
+export async function signInWithGoogle() {
+  const redirectUrl = Linking.createURL("auth/callback");
+
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: redirectUrl,
+      skipBrowserRedirect: true,
+    },
+  });
+
+  if (error) throw error;
+  if (!data?.url) throw new Error("No OAuth URL returned");
+
+  const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+
+  if (result.type !== "success") {
+    throw new Error("Google sign-in was cancelled");
+  }
+
+  const url = result.url;
+
+  const queryIndex = url.indexOf("?");
+  if (queryIndex !== -1) {
+    const queryParams = new URLSearchParams(url.substring(queryIndex + 1));
+    const oauthError = queryParams.get("error");
+    if (oauthError) {
+      const description = queryParams.get("error_description") ?? oauthError;
+      throw new Error(`Google sign-in failed: ${description}`);
+    }
+  }
+
+  const hashIndex = url.indexOf("#");
+  if (hashIndex === -1) throw new Error("No session tokens in redirect");
+
+  const params = new URLSearchParams(url.substring(hashIndex + 1));
+  const accessToken = params.get("access_token");
+  const refreshToken = params.get("refresh_token");
+
+  if (!accessToken || !refreshToken) {
+    throw new Error("Missing session tokens in redirect");
+  }
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+  });
+
+  if (sessionError) throw sessionError;
+  if (sessionData.user) await ensureUserAndProfile(sessionData.user);
+
+  return sessionData;
 }
 
 export async function resetPassword(email: string) {
