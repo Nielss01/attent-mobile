@@ -32,6 +32,19 @@ const GOOGLE_CONNECT_PATHS = [
   "/api/google-contacts/connect",
 ];
 
+const EXTERNAL_URL_PREFIXES = [
+  "https://wa.me/",
+  "https://api.whatsapp.com/",
+  "whatsapp://",
+  "mailto:",
+  "tel:",
+  "sms:",
+];
+
+function isExternalUrl(url: string): boolean {
+  return EXTERNAL_URL_PREFIXES.some((prefix) => url.startsWith(prefix));
+}
+
 export default function WebViewScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -136,6 +149,10 @@ export default function WebViewScreen() {
           handleNativeSignOut();
         } else if (message.type === "request-push-permission") {
           handlePushPermissionRequest();
+        } else if (message.type === "open-external-url" && message.url) {
+          Linking.openURL(message.url).catch((err) =>
+            console.warn("[WebView] Could not open external URL:", message.url, err),
+          );
         }
       } catch {
         // not JSON, ignore
@@ -236,8 +253,17 @@ export default function WebViewScreen() {
 
   const handleShouldStartLoad = useCallback(
     (event: ShouldStartLoadRequest): boolean => {
+      const raw = event.url;
+
+      if (isExternalUrl(raw)) {
+        Linking.openURL(raw).catch((err) =>
+          console.warn("[WebView] Could not open external URL:", raw, err),
+        );
+        return false;
+      }
+
       try {
-        const url = new URL(event.url);
+        const url = new URL(raw);
         const matchedPath = GOOGLE_CONNECT_PATHS.find(
           (p) => url.pathname === p,
         );
@@ -326,8 +352,54 @@ export default function WebViewScreen() {
           '--native-safe-area-bottom', '${insets.bottom}px'
         );
 
-        // Monitor URL changes (catches SPA navigations that
-        // onNavigationStateChange may miss)
+        (function() {
+          var externalPrefixes = ${JSON.stringify(EXTERNAL_URL_PREFIXES)};
+          var lastSentUrl = '';
+          var lastSentAt = 0;
+
+          function isExternal(url) {
+            if (!url || typeof url !== 'string') return false;
+            for (var i = 0; i < externalPrefixes.length; i++) {
+              if (url.indexOf(externalPrefixes[i]) === 0) return true;
+            }
+            return false;
+          }
+
+          function sendExternalUrl(url) {
+            var now = Date.now();
+            if (url === lastSentUrl && now - lastSentAt < 2000) return;
+            lastSentUrl = url;
+            lastSentAt = now;
+            window.ReactNativeWebView.postMessage(
+              JSON.stringify({ type: 'open-external-url', url: url })
+            );
+          }
+
+          var origOpen = window.open;
+          window.open = function(url) {
+            if (typeof url === 'string' && isExternal(url)) {
+              sendExternalUrl(url);
+              return null;
+            }
+            if (!url || url === 'about:blank') {
+              return null;
+            }
+            return origOpen.apply(this, arguments);
+          };
+
+          var origAssign = window.location.assign;
+          Object.defineProperty(window.location, 'assign', {
+            configurable: true,
+            value: function(url) {
+              if (typeof url === 'string' && isExternal(url)) {
+                sendExternalUrl(url);
+                return;
+              }
+              return origAssign.call(window.location, url);
+            }
+          });
+        })();
+
         (function() {
           var authPaths = ['/auth/sign-in', '/auth/sign-up'];
           var lastUrl = location.href;
@@ -349,7 +421,6 @@ export default function WebViewScreen() {
             }
           }
 
-          // Patch pushState/replaceState to detect SPA navigations
           var origPush = history.pushState;
           var origReplace = history.replaceState;
           history.pushState = function() {
