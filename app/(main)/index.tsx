@@ -23,6 +23,7 @@ import { useBrandColors } from "@/hooks/use-brand-colors";
 import { Config } from "@/lib/config";
 import { supabase } from "@/lib/supabase";
 import { signOut } from "@/lib/auth";
+import { isBiometricLoginEnabled, stashSessionForBiometric } from "@/lib/biometrics";
 import { consumePendingMoment, onMomentDeepLink } from "@/lib/deep-link";
 import { registerForPushNotifications, savePushToken } from "@/lib/notifications";
 
@@ -36,6 +37,9 @@ const EXTERNAL_URL_PREFIXES = [
   "https://wa.me/",
   "https://api.whatsapp.com/",
   "whatsapp://",
+  "https://www.facebook.com/sharer/",
+  "instagram://",
+  "https://instagram.com/",
   "mailto:",
   "tel:",
   "sms:",
@@ -107,13 +111,24 @@ export default function WebViewScreen() {
     [],
   );
 
-  async function handleNativeSignOut() {
+  async function handleNativeSignOut(webViewRefreshToken?: string) {
     try {
-      await signOut();
+      await signOut(webViewRefreshToken);
     } catch {
       // best-effort
     }
     router.replace("/(auth)/sign-in" as Href);
+  }
+
+  async function handleTokenSync(refreshToken: string) {
+    try {
+      const bioEnabled = await isBiometricLoginEnabled();
+      if (bioEnabled) {
+        await stashSessionForBiometric(refreshToken);
+      }
+    } catch {
+      // best-effort
+    }
   }
 
   const handleError = useCallback((event: WebViewErrorEvent) => {
@@ -146,7 +161,9 @@ export default function WebViewScreen() {
       try {
         const message = JSON.parse(event.nativeEvent.data);
         if (message.type === "sign-out") {
-          handleNativeSignOut();
+          handleNativeSignOut(message.refresh_token);
+        } else if (message.type === "token-sync" && message.refresh_token) {
+          handleTokenSync(message.refresh_token);
         } else if (message.type === "request-push-permission") {
           handlePushPermissionRequest();
         } else if (message.type === "open-external-url" && message.url) {

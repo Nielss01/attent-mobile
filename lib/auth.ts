@@ -86,13 +86,14 @@ export async function resetPassword(email: string) {
   if (error) throw error;
 }
 
-export async function signOut() {
+export async function signOut(webViewRefreshToken?: string) {
   const bioEnabled = await isBiometricLoginEnabled();
   if (bioEnabled) {
-    // Grab the latest refresh token before clearing local state.
-    const { data } = await supabase.auth.getSession();
-    if (data.session?.refresh_token) {
-      await stashSessionForBiometric(data.session.refresh_token);
+    const tokenToStash =
+      webViewRefreshToken ??
+      (await supabase.auth.getSession()).data.session?.refresh_token;
+    if (tokenToStash) {
+      await stashSessionForBiometric(tokenToStash);
     }
     // Use 'local' scope so the refresh token stays valid server-side,
     // allowing biometric re-entry with the stashed token.

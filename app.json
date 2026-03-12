@@ -19,7 +19,10 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSFaceIDUsageDescription": "Attent uses Face ID to securely unlock the app.",
         "LSApplicationQueriesSchemes": [
-          "whatsapp"
+          "whatsapp",
+          "instagram",
+          "fb",
+          "fb-messenger"
         ]
       }
     },
