@@ -26,7 +26,10 @@ const secureStoreAdapter =
 export const supabase = createClient(Config.supabaseUrl, Config.supabaseAnonKey, {
   auth: {
     storage: secureStoreAdapter,
-    autoRefreshToken: true,
+    // The WebView owns token refresh — disable here to prevent two clients
+    // racing to rotate the same refresh token (which causes Supabase to
+    // revoke the entire token family).
+    autoRefreshToken: false,
     persistSession: true,
     detectSessionInUrl: false,
   },

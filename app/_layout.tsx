@@ -45,7 +45,9 @@ export default function RootLayout() {
         if (data.session) {
           const userResult = await supabase.auth.getUser();
           if (userResult.error) {
-            await supabase.auth.signOut().catch(() => {});
+            // Use local scope so the server-side refresh token (and the
+            // stashed biometric token) stays valid for biometric re-entry.
+            await supabase.auth.signOut({ scope: "local" }).catch(() => {});
             setSession(null);
             setIsReady(true);
             return;

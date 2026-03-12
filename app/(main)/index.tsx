@@ -120,8 +120,15 @@ export default function WebViewScreen() {
     router.replace("/(auth)/sign-in" as Href);
   }
 
-  async function handleTokenSync(refreshToken: string) {
+  async function handleTokenSync(accessToken: string, refreshToken: string) {
     try {
+      // Feed the WebView's fresh tokens into the native Supabase client so
+      // native operations (Google Connect, push registration) have valid
+      // credentials, and the biometric stash stays current.
+      await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
       const bioEnabled = await isBiometricLoginEnabled();
       if (bioEnabled) {
         await stashSessionForBiometric(refreshToken);
@@ -162,8 +169,8 @@ export default function WebViewScreen() {
         const message = JSON.parse(event.nativeEvent.data);
         if (message.type === "sign-out") {
           handleNativeSignOut(message.refresh_token);
-        } else if (message.type === "token-sync" && message.refresh_token) {
-          handleTokenSync(message.refresh_token);
+        } else if (message.type === "token-sync" && message.access_token && message.refresh_token) {
+          handleTokenSync(message.access_token, message.refresh_token);
         } else if (message.type === "request-push-permission") {
           handlePushPermissionRequest();
         } else if (message.type === "open-external-url" && message.url) {
