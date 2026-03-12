@@ -163,7 +163,16 @@ const DEFAULT_GROUPS = [
   },
 ] as const;
 
-async function ensureUserAndProfile(authUser: User) {
+function randomSuffix(len = 4): string {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  for (let i = 0; i < len; i++) {
+    result += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return result;
+}
+
+export async function ensureUserAndProfile(authUser: User) {
   const fullName =
     (authUser.user_metadata?.full_name as string) ??
     (authUser.user_metadata?.name as string) ??
@@ -191,15 +200,43 @@ async function ensureUserAndProfile(authUser: User) {
   }
 
   if (!existingProfile) {
-    const defaultUsername = `${firstName}${lastName}`.toLowerCase().replace(/[^a-z0-9]/g, "");
-    await supabase.from("profiles").insert({
-      user_id: authUser.id,
-      first_name: firstName,
-      last_name: lastName,
-      username: defaultUsername,
-      avatar_url: avatarUrl,
-      email: authUser.email?.toLowerCase(),
-    });
+    const baseUsername = `${firstName}${lastName}`.toLowerCase().replace(/[^a-z0-9]/g, "") || "user";
+    let username = baseUsername;
+    let inserted = false;
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { error: insertErr } = await supabase.from("profiles").insert({
+        user_id: authUser.id,
+        first_name: firstName,
+        last_name: lastName,
+        username,
+        avatar_url: avatarUrl,
+        email: authUser.email?.toLowerCase(),
+      });
+
+      if (!insertErr) {
+        inserted = true;
+        break;
+      }
+
+      if (insertErr.code === "23505") {
+        username = `${baseUsername}${randomSuffix()}`;
+        continue;
+      }
+
+      throw insertErr;
+    }
+
+    if (!inserted) {
+      await supabase.from("profiles").insert({
+        user_id: authUser.id,
+        first_name: firstName,
+        last_name: lastName,
+        username: `${baseUsername}${randomSuffix(8)}`,
+        avatar_url: avatarUrl,
+        email: authUser.email?.toLowerCase(),
+      });
+    }
   }
 
   const { count: groupCount } = await supabase

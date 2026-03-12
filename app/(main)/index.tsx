@@ -14,7 +14,10 @@ import { WebView, type WebViewNavigation } from "react-native-webview";
 import type {
   WebViewErrorEvent,
   WebViewHttpErrorEvent,
+  ShouldStartLoadRequest,
 } from "react-native-webview/lib/WebViewTypes";
+import * as WebBrowser from "expo-web-browser";
+import * as Linking from "expo-linking";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBrandColors } from "@/hooks/use-brand-colors";
 import { Config } from "@/lib/config";
@@ -24,6 +27,10 @@ import { consumePendingMoment, onMomentDeepLink } from "@/lib/deep-link";
 import { registerForPushNotifications, savePushToken } from "@/lib/notifications";
 
 const AUTH_INTERCEPT_PATHS = ["/auth/sign-in", "/auth/sign-up"];
+const GOOGLE_CONNECT_PATHS = [
+  "/api/google-calendar/connect",
+  "/api/google-contacts/connect",
+];
 
 export default function WebViewScreen() {
   const router = useRouter();
@@ -162,6 +169,90 @@ export default function WebViewScreen() {
     }
   }, []);
 
+  const googleConnectInProgress = useRef(false);
+
+  const handleGoogleConnect = useCallback(async (connectPath: string) => {
+    if (googleConnectInProgress.current) return;
+    googleConnectInProgress.current = true;
+
+    const isContacts = connectPath.includes("google-contacts");
+    const tokenTable = isContacts
+      ? "user_google_contacts_tokens"
+      : "user_google_calendar_tokens";
+    const errorKey = isContacts ? "gcontacts_error" : "gcal_error";
+    const label = isContacts ? "GContacts" : "GCal";
+
+    try {
+      const { data } = await supabase.auth.getSession();
+      const session = data.session;
+      if (!session) return;
+
+      const connectUrl =
+        `${Config.webAppUrl}${connectPath}` +
+        `?access_token=${encodeURIComponent(session.access_token)}` +
+        `&native=1`;
+
+      const returnUrl = Linking.createURL("gcal-callback");
+
+      const result = await WebBrowser.openAuthSessionAsync(connectUrl, returnUrl);
+
+      if (result.type === "success" && result.url) {
+        const parsed = new URL(result.url);
+        const googleAccessToken = parsed.searchParams.get("google_access_token");
+        const googleRefreshToken = parsed.searchParams.get("google_refresh_token");
+        const expiresIn = parsed.searchParams.get("expires_in");
+        const oauthError =
+          parsed.searchParams.get(errorKey) ??
+          parsed.searchParams.get("gcal_error") ??
+          parsed.searchParams.get("gcontacts_error");
+
+        if (oauthError) {
+          console.warn(`[${label}] OAuth error:`, oauthError);
+        } else if (googleAccessToken && googleRefreshToken && expiresIn) {
+          const expiresAt = new Date(
+            Date.now() + Number(expiresIn) * 1000,
+          ).toISOString();
+
+          await supabase.from(tokenTable).upsert(
+            {
+              user_id: session.user.id,
+              access_token: googleAccessToken,
+              refresh_token: googleRefreshToken,
+              token_expires_at: expiresAt,
+              connected_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id" },
+          );
+        }
+      }
+
+      webViewRef.current?.reload();
+    } catch (err) {
+      console.error(`[${label}] Connect error:`, err);
+    } finally {
+      googleConnectInProgress.current = false;
+    }
+  }, []);
+
+  const handleShouldStartLoad = useCallback(
+    (event: ShouldStartLoadRequest): boolean => {
+      try {
+        const url = new URL(event.url);
+        const matchedPath = GOOGLE_CONNECT_PATHS.find(
+          (p) => url.pathname === p,
+        );
+        if (matchedPath) {
+          handleGoogleConnect(matchedPath);
+          return false;
+        }
+      } catch {
+        // invalid URL, allow
+      }
+      return true;
+    },
+    [handleGoogleConnect],
+  );
+
   if (error) {
     return (
       <View
@@ -205,6 +296,7 @@ export default function WebViewScreen() {
       source={{ uri: webViewUrl }}
       style={{ flex: 1, backgroundColor: c.background }}
       onNavigationStateChange={handleNavigationStateChange}
+      onShouldStartLoadWithRequest={handleShouldStartLoad}
       onError={handleError}
       onHttpError={handleHttpError}
       onMessage={handleMessage}
