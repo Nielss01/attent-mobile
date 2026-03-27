@@ -121,7 +121,7 @@ const DEFAULT_GROUPS = [
   {
     slug: "friends",
     name: "Friends",
-    color: "bg-accent/20 text-accent-foreground",
+    color: "green",
     can_view_birthday: true,
     can_view_address: false,
     can_view_moments: true,
@@ -132,7 +132,7 @@ const DEFAULT_GROUPS = [
   {
     slug: "family",
     name: "Family",
-    color: "bg-primary/15 text-primary",
+    color: "blue",
     can_view_birthday: true,
     can_view_address: true,
     can_view_moments: true,
@@ -143,7 +143,7 @@ const DEFAULT_GROUPS = [
   {
     slug: "colleagues",
     name: "Colleagues",
-    color: "bg-muted text-muted-foreground",
+    color: "amber",
     can_view_birthday: true,
     can_view_address: false,
     can_view_moments: false,
@@ -154,7 +154,7 @@ const DEFAULT_GROUPS = [
   {
     slug: "acquaintances",
     name: "Acquaintances",
-    color: "bg-secondary text-secondary-foreground",
+    color: "slate",
     can_view_birthday: true,
     can_view_address: false,
     can_view_moments: false,

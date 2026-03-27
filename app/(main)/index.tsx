@@ -32,6 +32,7 @@ const GOOGLE_CONNECT_PATHS = [
   "/api/google-calendar/connect",
   "/api/google-contacts/connect",
 ];
+const SOCIAL_CONNECT_PREFIX = "/api/social/";
 
 const EXTERNAL_URL_PREFIXES = [
   "https://wa.me/",
@@ -275,6 +276,42 @@ export default function WebViewScreen() {
     }
   }, []);
 
+  const socialConnectInProgress = useRef(false);
+
+  const handleSocialConnect = useCallback(async (connectPath: string) => {
+    if (socialConnectInProgress.current) return;
+    socialConnectInProgress.current = true;
+
+    try {
+      const { data } = await supabase.auth.getSession();
+      const session = data.session;
+      if (!session) return;
+
+      const connectUrl =
+        `${Config.webAppUrl}${connectPath}` +
+        `?access_token=${encodeURIComponent(session.access_token)}` +
+        `&native=1`;
+
+      const returnUrl = Linking.createURL("social-callback");
+
+      const result = await WebBrowser.openAuthSessionAsync(connectUrl, returnUrl);
+
+      if (result.type === "success" && result.url) {
+        const parsed = new URL(result.url);
+        const error = parsed.searchParams.get("social_error");
+        if (error) {
+          console.warn("[Social] OAuth error:", error);
+        }
+      }
+
+      webViewRef.current?.reload();
+    } catch (err) {
+      console.error("[Social] Connect error:", err);
+    } finally {
+      socialConnectInProgress.current = false;
+    }
+  }, []);
+
   const handleShouldStartLoad = useCallback(
     (event: ShouldStartLoadRequest): boolean => {
       const raw = event.url;
@@ -295,12 +332,17 @@ export default function WebViewScreen() {
           handleGoogleConnect(matchedPath);
           return false;
         }
+
+        if (url.pathname.startsWith(SOCIAL_CONNECT_PREFIX) && url.pathname.endsWith("/connect")) {
+          handleSocialConnect(url.pathname);
+          return false;
+        }
       } catch {
         // invalid URL, allow
       }
       return true;
     },
-    [handleGoogleConnect],
+    [handleGoogleConnect, handleSocialConnect],
   );
 
   if (error) {
