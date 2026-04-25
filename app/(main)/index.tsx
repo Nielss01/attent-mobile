@@ -24,8 +24,12 @@ import { Config } from "@/lib/config";
 import { supabase } from "@/lib/supabase";
 import { signOut } from "@/lib/auth";
 import { isBiometricLoginEnabled, stashSessionForBiometric } from "@/lib/biometrics";
-import { consumePendingMoment, onMomentDeepLink } from "@/lib/deep-link";
+import { consumePendingMoment, onMomentDeepLink, consumePendingHolidayNotification, onHolidayNotification } from "@/lib/deep-link";
 import { registerForPushNotifications, savePushToken } from "@/lib/notifications";
+import {
+  requestContactsPermission,
+  fetchDeviceContacts,
+} from "@/lib/device-contacts";
 
 const AUTH_INTERCEPT_PATHS = ["/auth/sign-in", "/auth/sign-up"];
 const GOOGLE_CONNECT_PATHS = [
@@ -69,6 +73,12 @@ export default function WebViewScreen() {
     );
   }, []);
 
+  const openNotificationsPanel = useCallback(() => {
+    webViewRef.current?.injectJavaScript(
+      `window.dispatchEvent(new CustomEvent('attent:openNotifications')); true;`,
+    );
+  }, []);
+
   useEffect(() => {
     buildSessionUrl();
   }, []);
@@ -80,6 +90,14 @@ export default function WebViewScreen() {
       }
     });
   }, [navigateToMoment]);
+
+  useEffect(() => {
+    return onHolidayNotification(() => {
+      if (webViewReady.current) {
+        openNotificationsPanel();
+      }
+    });
+  }, [openNotificationsPanel]);
 
   async function buildSessionUrl() {
     const { data } = await supabase.auth.getSession();
@@ -178,6 +196,12 @@ export default function WebViewScreen() {
           Linking.openURL(message.url).catch((err) =>
             console.warn("[WebView] Could not open external URL:", message.url, err),
           );
+        } else if (message.type === "request-contacts-permission") {
+          handleContactsPermissionRequest();
+        } else if (message.type === "request-device-contacts") {
+          handleDeviceContactsRequest();
+        } else if (message.type === "open-device-settings") {
+          Linking.openSettings().catch(() => {});
         }
       } catch {
         // not JSON, ignore
@@ -207,6 +231,46 @@ export default function WebViewScreen() {
       console.error("[WebView] Push permission request error:", err);
       webViewRef.current?.injectJavaScript(
         `window.dispatchEvent(new CustomEvent('native-push-result', { detail: { success: false, reason: 'error' } })); true;`,
+      );
+    }
+  }, []);
+
+  const handleContactsPermissionRequest = useCallback(async () => {
+    try {
+      const status = await requestContactsPermission();
+      webViewRef.current?.injectJavaScript(
+        `window.dispatchEvent(new CustomEvent('native-contacts-permission-result', { detail: ${JSON.stringify({ status })} })); true;`,
+      );
+    } catch (err) {
+      console.error("[WebView] Contacts permission request error:", err);
+      webViewRef.current?.injectJavaScript(
+        `window.dispatchEvent(new CustomEvent('native-contacts-permission-result', { detail: { status: 'denied' } })); true;`,
+      );
+    }
+  }, []);
+
+  const handleDeviceContactsRequest = useCallback(async () => {
+    try {
+      const contacts = await fetchDeviceContacts();
+      // Send in chunks of 200 to avoid hitting WebView bridge message size limits
+      const CHUNK_SIZE = 200;
+      const total = contacts.length;
+      for (let i = 0; i < total; i += CHUNK_SIZE) {
+        const chunk = contacts.slice(i, i + CHUNK_SIZE);
+        const isLast = i + CHUNK_SIZE >= total;
+        webViewRef.current?.injectJavaScript(
+          `window.dispatchEvent(new CustomEvent('native-device-contacts-chunk', { detail: ${JSON.stringify({ contacts: chunk, total, isLast })} })); true;`,
+        );
+      }
+      if (total === 0) {
+        webViewRef.current?.injectJavaScript(
+          `window.dispatchEvent(new CustomEvent('native-device-contacts-chunk', { detail: { contacts: [], total: 0, isLast: true } })); true;`,
+        );
+      }
+    } catch (err) {
+      console.error("[WebView] Device contacts fetch error:", err);
+      webViewRef.current?.injectJavaScript(
+        `window.dispatchEvent(new CustomEvent('native-device-contacts-error', { detail: { message: 'Failed to read contacts' } })); true;`,
       );
     }
   }, []);
@@ -397,8 +461,12 @@ export default function WebViewScreen() {
         setIsLoading(false);
         if (!webViewReady.current) {
           webViewReady.current = true;
-          const pending = consumePendingMoment();
-          if (pending) navigateToMoment(pending);
+          const pendingMoment = consumePendingMoment();
+          if (pendingMoment) {
+            navigateToMoment(pendingMoment);
+          } else if (consumePendingHolidayNotification()) {
+            openNotificationsPanel();
+          }
         }
       }}
       javaScriptEnabled

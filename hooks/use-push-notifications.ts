@@ -7,11 +7,26 @@ import {
   addNotificationReceivedListener,
   addNotificationResponseListener,
 } from "@/lib/notifications";
-import { setPendingMoment } from "@/lib/deep-link";
+import { setPendingMoment, setPendingHolidayNotification } from "@/lib/deep-link";
 
 function extractMomentId(response: Notifications.NotificationResponse): string | null {
   const data = response.notification.request.content.data;
   return typeof data?.momentId === "string" ? data.momentId : null;
+}
+
+function extractNotificationType(response: Notifications.NotificationResponse): string | null {
+  const data = response.notification.request.content.data;
+  return typeof data?.type === "string" ? data.type : null;
+}
+
+function handleNotificationResponse(response: Notifications.NotificationResponse) {
+  const type = extractNotificationType(response);
+  if (type === "holiday_reminder") {
+    setPendingHolidayNotification();
+    return;
+  }
+  const momentId = extractMomentId(response);
+  if (momentId) setPendingMoment(momentId);
 }
 
 export function usePushNotifications(userId: string | undefined) {
@@ -31,10 +46,7 @@ export function usePushNotifications(userId: string | undefined) {
     if (!coldStartHandled.current) {
       coldStartHandled.current = true;
       Notifications.getLastNotificationResponseAsync().then((response) => {
-        if (response) {
-          const momentId = extractMomentId(response);
-          if (momentId) setPendingMoment(momentId);
-        }
+        if (response) handleNotificationResponse(response);
       });
     }
 
@@ -44,8 +56,7 @@ export function usePushNotifications(userId: string | undefined) {
     });
 
     responseListener.current = addNotificationResponseListener((response) => {
-      const momentId = extractMomentId(response);
-      if (momentId) setPendingMoment(momentId);
+      handleNotificationResponse(response);
     });
 
     return () => {

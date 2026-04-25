@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Link, useRouter, type Href } from "expo-router";
+import * as AppleAuthentication from "expo-apple-authentication";
 import { AuthContainer } from "@/components/auth/AuthContainer";
 import { AuthInput } from "@/components/auth/AuthInput";
 import { AuthButton } from "@/components/auth/AuthButton";
@@ -9,7 +10,7 @@ import { GoogleIcon } from "@/components/auth/GoogleIcon";
 import { FaceIdIcon } from "@/components/auth/FaceIdIcon";
 import { FingerprintIcon } from "@/components/auth/FingerprintIcon";
 import { useBrandColors } from "@/hooks/use-brand-colors";
-import { signInWithEmail, signInWithGoogle } from "@/lib/auth";
+import { signInWithEmail, signInWithGoogle, signInWithApple } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import {
   authenticate,
@@ -30,6 +31,7 @@ export default function SignInScreen() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
   const [biometricLoading, setBiometricLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -101,6 +103,23 @@ export default function SignInScreen() {
       }
     } finally {
       setGoogleLoading(false);
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    setError(null);
+    setAppleLoading(true);
+    try {
+      const sessionData = await signInWithApple();
+      await offerBiometricEnrollment(sessionData.session?.refresh_token);
+      router.replace("/(main)" as Href);
+    } catch (err: any) {
+      // Error code 1001 is user-cancelled — treat as a silent cancel
+      if (!err.message?.includes("1001")) {
+        setError(err.message ?? "Apple sign-in failed.");
+      }
+    } finally {
+      setAppleLoading(false);
     }
   };
 
@@ -188,6 +207,16 @@ export default function SignInScreen() {
         icon={<GoogleIcon size={16} />}
       />
 
+      {Platform.OS === "ios" && (
+        <AppleAuthentication.AppleAuthenticationButton
+          buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+          buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+          cornerRadius={12}
+          style={styles.appleButton}
+          onPress={handleAppleSignIn}
+        />
+      )}
+
       <View style={styles.footer}>
         <Text style={[styles.footerText, { color: c.mutedForeground }]}>
           Don&apos;t have an account?{" "}
@@ -205,6 +234,11 @@ export default function SignInScreen() {
 }
 
 const styles = StyleSheet.create({
+  appleButton: {
+    width: "100%",
+    height: 44,
+    marginTop: 12,
+  },
   biometricButton: {
     flexDirection: "row",
     alignItems: "center",

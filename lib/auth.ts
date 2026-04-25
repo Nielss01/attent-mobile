@@ -1,6 +1,8 @@
 import type { Session, User } from "@supabase/supabase-js";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
+import * as AppleAuthentication from "expo-apple-authentication";
+import * as Crypto from "expo-crypto";
 import { supabase } from "./supabase";
 import {
   clearStashedSession,
@@ -8,6 +10,8 @@ import {
   isBiometricLoginEnabled,
   stashSessionForBiometric,
 } from "./biometrics";
+import { GOOGLE_SSO_SCOPES } from "./google-oauth-scopes";
+import { getGrantedScopes, storeProviderTokens } from "./google-token-utils";
 
 export async function signInWithEmail(email: string, password: string) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -35,6 +39,8 @@ export async function signInWithGoogle() {
     options: {
       redirectTo: redirectUrl,
       skipBrowserRedirect: true,
+      scopes: GOOGLE_SSO_SCOPES,
+      queryParams: { access_type: "offline" },
     },
   });
 
@@ -65,6 +71,8 @@ export async function signInWithGoogle() {
   const params = new URLSearchParams(url.substring(hashIndex + 1));
   const accessToken = params.get("access_token");
   const refreshToken = params.get("refresh_token");
+  const providerToken = params.get("provider_token");
+  const providerRefreshToken = params.get("provider_refresh_token");
 
   if (!accessToken || !refreshToken) {
     throw new Error("Missing session tokens in redirect");
@@ -78,7 +86,59 @@ export async function signInWithGoogle() {
   if (sessionError) throw sessionError;
   if (sessionData.user) await ensureUserAndProfile(sessionData.user);
 
+  if (providerToken && sessionData.user) {
+    try {
+      const grantedScopes = await getGrantedScopes(providerToken);
+      await storeProviderTokens(sessionData.user.id, providerToken, providerRefreshToken ?? null, grantedScopes);
+    } catch {
+      // Token storage is best-effort; user can connect via Settings later
+    }
+  }
+
   return sessionData;
+}
+
+export async function signInWithApple() {
+  const rawNonce = Math.random().toString(36).substring(2, 18);
+  const hashedNonce = await Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    rawNonce,
+  );
+
+  const credential = await AppleAuthentication.signInAsync({
+    requestedScopes: [
+      AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+      AppleAuthentication.AppleAuthenticationScope.EMAIL,
+    ],
+    nonce: hashedNonce,
+  });
+
+  if (!credential.identityToken) {
+    throw new Error("Apple Sign-In failed: no identity token returned");
+  }
+
+  const { data, error } = await supabase.auth.signInWithIdToken({
+    provider: "apple",
+    token: credential.identityToken,
+    nonce: rawNonce,
+  });
+
+  if (error) throw error;
+
+  // Apple only provides name on the very first sign-in; capture it before ensureUserAndProfile
+  const fullName = [credential.fullName?.givenName, credential.fullName?.familyName]
+    .filter(Boolean)
+    .join(" ");
+
+  if (fullName && data.user && !data.user.user_metadata?.full_name) {
+    await supabase.auth.updateUser({ data: { full_name: fullName } });
+    const { data: refreshed } = await supabase.auth.getUser();
+    if (refreshed.user) await ensureUserAndProfile(refreshed.user);
+  } else if (data.user) {
+    await ensureUserAndProfile(data.user);
+  }
+
+  return data;
 }
 
 export async function resetPassword(email: string) {

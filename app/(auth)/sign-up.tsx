@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Link, useRouter, type Href } from "expo-router";
+import * as AppleAuthentication from "expo-apple-authentication";
 import { AuthContainer } from "@/components/auth/AuthContainer";
 import { AuthInput } from "@/components/auth/AuthInput";
 import { AuthButton } from "@/components/auth/AuthButton";
 import { AuthDivider } from "@/components/auth/AuthDivider";
 import { GoogleIcon } from "@/components/auth/GoogleIcon";
 import { useBrandColors } from "@/hooks/use-brand-colors";
-import { signUpWithEmail, signInWithGoogle } from "@/lib/auth";
+import { signUpWithEmail, signInWithGoogle, signInWithApple } from "@/lib/auth";
 import { offerBiometricEnrollment } from "@/lib/biometrics";
 
 export default function SignUpScreen() {
@@ -19,6 +20,7 @@ export default function SignUpScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleGoogleSignUp = async () => {
@@ -34,6 +36,22 @@ export default function SignUpScreen() {
       }
     } finally {
       setGoogleLoading(false);
+    }
+  };
+
+  const handleAppleSignUp = async () => {
+    setError(null);
+    setAppleLoading(true);
+    try {
+      const sessionData = await signInWithApple();
+      await offerBiometricEnrollment(sessionData.session?.refresh_token);
+      router.replace("/(main)" as Href);
+    } catch (err: any) {
+      if (!err.message?.includes("1001")) {
+        setError(err.message ?? "Apple sign-up failed.");
+      }
+    } finally {
+      setAppleLoading(false);
     }
   };
 
@@ -114,6 +132,16 @@ export default function SignUpScreen() {
         icon={<GoogleIcon size={16} />}
       />
 
+      {Platform.OS === "ios" && (
+        <AppleAuthentication.AppleAuthenticationButton
+          buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP}
+          buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+          cornerRadius={12}
+          style={styles.appleButton}
+          onPress={handleAppleSignUp}
+        />
+      )}
+
       {/* Footer — text-sm text-muted-foreground mt-6 */}
       <View style={styles.footer}>
         <Text style={[styles.footerText, { color: c.mutedForeground }]}>
@@ -132,6 +160,11 @@ export default function SignUpScreen() {
 }
 
 const styles = StyleSheet.create({
+  appleButton: {
+    width: "100%",
+    height: 44,
+    marginTop: 12,
+  },
   error: {
     fontSize: 14,
     marginBottom: 12,
